@@ -874,7 +874,153 @@
   <span>Student · STEM Enthusiast · Public Speaker</span>
 </footer>
 
+<!-- ── CHATBOT ── -->
+<style>
+  #chat-bubble {
+    position: fixed;
+    bottom: 2rem; right: 2rem;
+    z-index: 999;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 1rem;
+  }
+  #chat-toggle {
+    width: 54px; height: 54px;
+    border-radius: 50%;
+    background: var(--amber);
+    border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem;
+    box-shadow: 0 4px 24px rgba(240,176,66,0.35);
+    transition: transform 0.2s, background 0.2s;
+    flex-shrink: 0;
+  }
+  #chat-toggle:hover { transform: scale(1.08); background: #ffc44d; }
+  #chat-window {
+    width: 340px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-hi);
+    border-radius: 12px;
+    overflow: hidden;
+    display: none;
+    flex-direction: column;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+  }
+  #chat-window.open { display: flex; }
+  #chat-header {
+    padding: 0.9rem 1.2rem;
+    background: var(--bg-raised);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 0.7rem;
+  }
+  .chat-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+  #chat-header span { font-size: 0.82rem; font-weight: 600; color: var(--text); flex: 1; }
+  #chat-header small { font-size: 0.68rem; color: var(--text-mute); font-family: 'DM Mono', monospace; }
+  #chat-messages {
+    flex: 1; padding: 1rem; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 0.75rem;
+    max-height: 320px; min-height: 200px;
+  }
+  .msg { max-width: 85%; padding: 0.6rem 0.9rem; border-radius: 10px; font-size: 0.84rem; line-height: 1.55; }
+  .msg.bot { background: var(--bg-hover); color: var(--text-soft); align-self: flex-start; border-bottom-left-radius: 3px; }
+  .msg.user { background: var(--amber); color: #0d0f14; align-self: flex-end; font-weight: 500; border-bottom-right-radius: 3px; }
+  .msg.typing { opacity: 0.5; font-style: italic; }
+  #chat-input-row { display: flex; border-top: 1px solid var(--border); background: var(--bg-raised); }
+  #chat-input { flex: 1; background: transparent; border: none; outline: none; padding: 0.8rem 1rem; font-size: 0.84rem; color: var(--text); font-family: 'DM Sans', sans-serif; }
+  #chat-input::placeholder { color: var(--text-mute); }
+  #chat-send { background: transparent; border: none; cursor: pointer; padding: 0 1rem; color: var(--amber); font-size: 1.1rem; transition: opacity 0.2s; }
+  #chat-send:hover { opacity: 0.7; }
+</style>
+
+<div id="chat-bubble">
+  <div id="chat-window">
+    <div id="chat-header">
+      <div class="chat-dot"></div>
+      <span>Ask about Ahmed</span>
+      <small>AI assistant</small>
+    </div>
+    <div id="chat-messages">
+      <div class="msg bot">Hi! I'm Ahmed's AI assistant. Ask me anything about his experience, projects, or skills 👋</div>
+    </div>
+    <div id="chat-input-row">
+      <input id="chat-input" type="text" placeholder="Ask something..." />
+      <button id="chat-send">➤</button>
+    </div>
+  </div>
+  <button id="chat-toggle" title="Chat with AI">💬</button>
+</div>
+
 <script>
+  const SYSTEM_PROMPT = `You are a helpful AI assistant on Ahmed Ammar Azhar's personal portfolio website. Answer questions about Ahmed based only on the following info. Be concise, friendly, and professional.
+
+ABOUT: A Levels student from Islamabad, Pakistan. Email: ahmedammarazhar@gmail.com | Phone: 0301-5178804. Passionate about STEM, public speaking, entrepreneurship.
+
+EDUCATION: O Levels 6A*s, 3As | Valedictorian (2025). Currently doing A Levels.
+
+EXPERIENCE:
+- President, School Debates Society & Event Head, ISDC (2025-Present)
+- Junior Digital Marketing Executive, BizExcel & OLMEDI: Google Ads for US/UAE clients, lead generation, earned certifications
+- Media Director, Mashal Foundation NGO: content creation, 20,000+ online views, supported underprivileged schools
+
+PROJECTS: Arduino fire-fighting robot; safe-landing parachute model (won award WSW IST 2023); thrifted.kitaaben online bookstore (~PKR 10,000 profit); Akinator-style Python game; proposed intra-school declamation competition; NGO digital outreach content.
+
+SKILLS: Python, HTML/CSS, Arduino; public speaking, parliamentary debating, team leadership, event management; Google Ads, content creation, social media; entrepreneurship, STEM, critical thinking.
+
+AWARDS: Valedictorian; 2nd Best Speaker Froebels 2024; 14th Best Speaker DSP North Regionals 2025; Category Winner BNA'26 STEM; WSW IST wins; Outstanding Diplomacy Award LGSIMUN; Best School Award Beaconhouse Karakoram 2024; Google Ads certification; Top 30 teams nationally Jan 2026.
+
+If asked something unrelated to Ahmed, politely redirect back to his portfolio.`;
+
+  let chatHistory = [];
+  const chatToggle = document.getElementById('chat-toggle');
+  const chatWindow = document.getElementById('chat-window');
+  const chatInput = document.getElementById('chat-input');
+  const chatSend = document.getElementById('chat-send');
+  const chatMessages = document.getElementById('chat-messages');
+
+  chatToggle.addEventListener('click', () => {
+    chatWindow.classList.toggle('open');
+    if (chatWindow.classList.contains('open')) chatInput.focus();
+  });
+
+  function addMsg(text, role) {
+    const div = document.createElement('div');
+    div.className = `msg ${role}`;
+    div.textContent = text;
+    chatMessages.appendChild(div);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    return div;
+  }
+
+  async function sendChat() {
+    const text = chatInput.value.trim();
+    if (!text) return;
+    chatInput.value = '';
+    addMsg(text, 'user');
+    chatHistory.push({ role: 'user', content: text });
+    const typing = addMsg('Typing...', 'bot typing');
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer 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' },
+        body: JSON.stringify({
+          model: 'llama3-8b-8192',
+          max_tokens: 1000,
+          
+          messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...chatHistory]
+        })
+      });
+      const data = await res.json();
+      const reply = data.choices?.[0]?.message?.content || "Sorry, couldn't get a response.";
+      chatHistory.push({ role: 'assistant', content: reply });
+      typing.textContent = reply;
+      typing.classList.remove('typing');
+    } catch {
+      typing.textContent = "Something went wrong. Try again!";
+      typing.classList.remove('typing');
+    }
+  }
+
+  chatSend.addEventListener('click', sendChat);
+  chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+
   const reveals = document.querySelectorAll('.reveal');
   const observer = new IntersectionObserver((entries) => {
     entries.forEach((entry, i) => {
